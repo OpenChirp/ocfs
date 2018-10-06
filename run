@@ -4,6 +4,12 @@ MNT=~/mnttest
 USERID=<OC_USER_ID>
 USERTOKEN=<OC_USER_TOKEN>
 
+if ! [ -d "$MNT" ]; then
+	if ! mkdir -p $MNT; then
+		exit 1
+	fi
+fi
+
 if ! go build; then
 	exit 1
 fi
