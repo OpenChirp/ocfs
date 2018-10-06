@@ -1,0 +1,11 @@
+#!/bin/bash
+
+MNT=~/mnttest
+USERID=<OC_USER_ID>
+USERTOKEN=<OC_USER_TOKEN>
+
+if ! go build; then
+	exit 1
+fi
+
+exec ./ocfs -mount $MNT -userid $USERID -usertoken $USERTOKEN
