@@ -72,9 +72,15 @@ func (me *OpenChirpFS) GetAttr(name string, context *fuse.Context) (*fuse.Attr, 
 		return &fuse.Attr{
 			Mode: fuse.S_IFDIR | 0755,
 		}, fuse.OK
-	} else if _, ok := l.devices[last]; ok {
+	} else if dev, ok := l.devices[last]; ok {
+		if dev.data == nil {
+			if err := dev.updateData(me.client); err != nil {
+				log.Printf("Failed to fetch device data: %v", err)
+				return nil, fuse.EIO
+			}
+		}
 		return &fuse.Attr{
-			Mode: fuse.S_IFREG | 0644, Size: uint64(len(name)),
+			Mode: fuse.S_IFREG | 0644, Size: uint64(len(dev.data)),
 		}, fuse.OK
 	}
 
@@ -135,13 +141,57 @@ func (me *OpenChirpFS) OpenDir(name string, context *fuse.Context) (c []fuse.Dir
 }
 
 func (me *OpenChirpFS) Open(name string, flags uint32, context *fuse.Context) (file nodefs.File, code fuse.Status) {
-	// if name != "file.txt" {
-	// 	return nil, fuse.ENOENT
-	// }
 	if flags&fuse.O_ANYWRITE != 0 {
 		return nil, fuse.EPERM
 	}
-	return nodefs.NewDataFile([]byte("Hello user")), fuse.OK
+
+	parts := strings.Split(name, string(os.PathSeparator))
+
+	var l = &me.root
+	l.mutex.Lock()
+	for _, p := range parts[:len(parts)-1] {
+		if p == "" {
+			continue
+		}
+		if !l.updatedChildren {
+			if err := l.updateChildren(me.client); err != nil {
+				l.mutex.Unlock()
+				log.Printf("Failed to update children: %v", err)
+				return nil, fuse.EIO
+			}
+		}
+
+		lNew, ok := l.children[p]
+		if !ok {
+			l.mutex.Unlock()
+			log.Printf("Failed to find path part: %s", p)
+			return nil, fuse.ENOENT
+		}
+
+		lNew.mutex.Lock()
+		l.mutex.Unlock()
+		l = lNew
+	}
+	defer l.mutex.Unlock()
+
+	if err := l.ensureChildrenAndDevices(me.client); err != nil {
+		log.Printf("Failed to ensure children and devices: %v", err)
+		return nil, fuse.EIO
+	}
+
+	last := parts[len(parts)-1]
+	if dev, ok := l.devices[last]; ok {
+		// fetch last value
+		if dev.data == nil {
+			if err := dev.updateData(me.client); err != nil {
+				log.Printf("Failed to fetch device data: %v", err)
+				return nil, fuse.EIO
+			}
+		}
+		return nodefs.NewDataFile(dev.data), fuse.OK
+	}
+
+	return nil, fuse.ENOENT
 }
 
 func main() {

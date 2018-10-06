@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/openchirp/framework"
@@ -11,6 +12,21 @@ import (
 
 type device struct {
 	rest.NodeDescriptor
+	data []byte
+}
+
+func (d *device) updateData(c *framework.UserClient) error {
+	node, err := c.FetchDeviceInfo(d.ID)
+	if err != nil {
+		return err
+	}
+	var out strings.Builder
+	out.WriteString(fmt.Sprintf("Name: %s\n", node.Name))
+	out.WriteString(fmt.Sprintf("ID: %s\n", node.ID))
+	out.WriteString(fmt.Sprintf("Owner: %s (%s)\n", node.Owner.Name, node.Owner.Email))
+	d.data = []byte(out.String())
+
+	return nil
 }
 
 type location struct {
@@ -61,7 +77,7 @@ func (l *location) updateDevices(c *framework.UserClient) error {
 	}
 	l.devices = make(map[string]*device, len(devices))
 	for _, d := range devices {
-		dev := &device{d}
+		dev := &device{NodeDescriptor: d}
 
 		name := dev.Name
 		var generation = 2
